@@ -414,6 +414,10 @@ export class Trie {
     throw new Error(`cannot walk empty trie with path ${path}`);
   }
 
+  async toFullTreeCBOR() {
+    throw new Error(`cannot serialise empty trie`);
+  }
+
   /** A custom function for inspecting an (empty) Trie.
    * @private
    */
