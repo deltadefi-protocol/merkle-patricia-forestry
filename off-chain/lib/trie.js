@@ -1,7 +1,7 @@
-import assert from 'node:assert';
-import * as buffer from 'node:buffer';
-import { inspect } from 'node:util';
-import { DIGEST_LENGTH, digest } from './crypto.js'
+import assert from "node:assert";
+import * as buffer from "node:buffer";
+import { inspect } from "node:util";
+import { DIGEST_LENGTH, digest } from "./crypto.js";
 import {
   NULL_HASH,
   assertInstanceOf,
@@ -14,10 +14,9 @@ import {
   nibbles,
   sparseVector,
   withEllipsis,
-} from './helpers.js'
-import { Store } from './store.js';
-import * as cbor from './cbor.js';
-
+} from "./helpers.js";
+import { Store } from "./store.js";
+import * as cbor from "./cbor.js";
 
 // -----------------------------------------------------------------------------
 // ------------------------------------------------------------------- Constants
@@ -37,7 +36,7 @@ const PREFIX_CUTOFF = 8; // # of nibbles
  * This is useful to ensure that the root hash doesn't get lost, and with it,
  * the entire trie. @private
  */
-const ROOT_KEY = '__root__';
+const ROOT_KEY = "__root__";
 
 // -----------------------------------------------------------------------------
 // ------------------------------------------------------------------------ Trie
@@ -78,14 +77,13 @@ export class Trie {
    */
   store;
 
-
   /** Construct a new empty trie. This constructor is mostly useless. See
    * {@link Trie.fromList} or {@link Trie.load} instead.
    *
    * @param {Store} [store]
    *   The trie's store, default to an in-memory store if omitted.
    */
-  constructor(store = new Store(), hash = null, prefix = '', size = 0) {
+  constructor(store = new Store(), hash = null, prefix = "", size = 0) {
     assertInstanceOf(Store, { store });
     this.hash = hash;
     this.prefix = prefix;
@@ -93,7 +91,6 @@ export class Trie {
     this.store = store;
     this.isRoot = hash === null;
   }
-
 
   /**
    * @param {Store} [store]
@@ -107,7 +104,6 @@ export class Trie {
     return trie.save();
   }
 
-
   /** Load a trie from disk.
    *
    * @param {Buffer} hash
@@ -116,14 +112,13 @@ export class Trie {
    *   The store to load the Trie from.
    */
   static async load(store) {
-    const root = await store.get(ROOT_KEY, (_, str) => Buffer.from(str, 'hex'));
+    const root = await store.get(ROOT_KEY, (_, str) => Buffer.from(str, "hex"));
     const trie = root.equals(NULL_HASH)
       ? new Trie()
       : await store.get(root, Trie.deserialise);
     trie.isRoot = true;
     return trie;
   }
-
 
   /** Saves the trie into the store, removing a previous occurence of it if any.
    * Also makes sure to leave a special key to retrieve the trie root later.
@@ -138,15 +133,13 @@ export class Trie {
     }
 
     if (this.isRoot) {
-      await this.store.put(
-        ROOT_KEY,
-        { serialise: () => (this.hash ?? NULL_HASH).toString('hex') }
-      );
+      await this.store.put(ROOT_KEY, {
+        serialise: () => (this.hash ?? NULL_HASH).toString("hex"),
+      });
     }
 
     return this;
   }
-
 
   /**
    * Test whether a trie is empty (i.e. holds no branch nodes or leaves).
@@ -155,7 +148,6 @@ export class Trie {
   isEmpty() {
     return this.size == 0;
   }
-
 
   /**
    * Construct a Merkle-Patricia {@link Trie} from a list of key/value pairs.
@@ -171,23 +163,18 @@ export class Trie {
         return new Trie();
       }
 
-      const prefix = commonPrefix(keyValues.map(kv => kv.path));
+      const prefix = commonPrefix(keyValues.map((kv) => kv.path));
 
       // ------------------- A leaf
       if (keyValues.length === 1) {
         const [kv] = keyValues;
-        return Leaf.from(
-          prefix,
-          kv.key,
-          kv.value,
-          store,
-        );
+        return Leaf.from(prefix, kv.key, kv.value, store);
       }
 
       // ------------------- A branch node
 
       // Remove the prefix from all children.
-      const stripped = keyValues.map(kv => {
+      const stripped = keyValues.map((kv) => {
         return { ...kv, path: kv.path.slice(prefix.length) };
       });
 
@@ -201,33 +188,37 @@ export class Trie {
       // NOTE(2): Because we have at least 2 values at this point, the
       // resulting Branch is guaranted to have at least 2 children. They cannot
       // be under the same branch since we have stripped their common prefix!
-      const nodes = await Promise.all(Array
-        .from('0123456789abcdef')
-        .map(digit => loop(digit, stripped.reduce((acc, kv) => {
-          assert(kv.path[0] !== undefined, `empty path for node ${kv}`);
+      const nodes = await Promise.all(
+        Array.from("0123456789abcdef").map((digit) =>
+          loop(
+            digit,
+            stripped.reduce((acc, kv) => {
+              assert(kv.path[0] !== undefined, `empty path for node ${kv}`);
 
-          if (kv.path[0] === digit) {
-            acc.push({ ...kv, path: kv.path.slice(1) });
-          }
+              if (kv.path[0] === digit) {
+                acc.push({ ...kv, path: kv.path.slice(1) });
+              }
 
-          return acc;
-        }, []))));
+              return acc;
+            }, [])
+          )
+        )
+      );
 
-      const children = nodes.map(trie => trie.isEmpty() ? undefined : trie);
+      const children = nodes.map((trie) => (trie.isEmpty() ? undefined : trie));
 
       return Branch.from(prefix, children, store);
     }
 
     const trie = await loop(
-      '',
-      elements.map(kv => ({ ...kv, path: intoPath(kv.key) }))
+      "",
+      elements.map((kv) => ({ ...kv, path: intoPath(kv.key) }))
     );
 
     trie.isRoot = true;
 
     return trie.save();
   }
-
 
   /**
    * Insert a new value at the given key and re-compute hashes of all nodes
@@ -286,13 +277,12 @@ export class Trie {
       }
     }
 
-    const self = Object.assign(this, await target.from(...args.concat(store)))
+    const self = Object.assign(this, await target.from(...args.concat(store)));
 
     self.isRoot = isRoot;
 
     return self.save(previousHash);
   }
-
 
   /** Conveniently access a child in the tries at the given path. A path is
    * sequence of nibbles, as an hex-encoded string.
@@ -324,8 +314,8 @@ export class Trie {
 
       return loop(
         this.store.get(child.hash, Trie.deserialise),
-        ix + trie.prefix.length + 1,
-      )
+        ix + trie.prefix.length + 1
+      );
     };
 
     return loop(Promise.resolve(this), 0);
@@ -346,7 +336,7 @@ export class Trie {
     // Use childAt to find the node corresponding to the path
     const node = await this.childAt(path);
 
-    key = typeof key === 'string' ? Buffer.from(key) : key;
+    key = typeof key === "string" ? Buffer.from(key) : key;
 
     // If the node is a Leaf and the key matches, return the value
     if (node instanceof Leaf && node.key.equals(key)) {
@@ -356,7 +346,6 @@ export class Trie {
     // Return undefined if no matching node is found
     return undefined;
   }
-
 
   /**
    * Creates a proof for a given element.
@@ -378,13 +367,13 @@ export class Trie {
       return this.isEmpty() && allowMissing
         ? new Proof(intoPath(key), undefined, [])
         : await this.walk(intoPath(key));
-    } catch(e) {
+    } catch (e) {
       if (!allowMissing) {
         throw e;
       }
 
       /* c8 ignore next 3 */
-      if (!(e instanceof assert.AssertionError) ) {
+      if (!(e instanceof assert.AssertionError)) {
         throw e;
       }
 
@@ -405,14 +394,13 @@ export class Trie {
           assert(hash.equals(this.hash));
           return proof;
         });
-      /* c8 ignore next 4 */
+        /* c8 ignore next 4 */
       } catch (e) {
         await this.save();
         throw e;
       }
     }
   }
-
 
   /** Walk a trie down a given path, accumulating neighboring nodes along the
    * way to build a proof.
@@ -426,12 +414,11 @@ export class Trie {
     throw new Error(`cannot walk empty trie with path ${path}`);
   }
 
-
   /** A custom function for inspecting an (empty) Trie.
    * @private
    */
   [inspect.custom](_depth, _options, _inspect) {
-    return 'ø';
+    return "ø";
   }
 
   /** Recover a Trie from an on-disk serialization format.
@@ -443,17 +430,18 @@ export class Trie {
    */
   static async deserialise(hash, blob, store) {
     switch (blob?.__kind) {
-      case 'Leaf':
+      case "Leaf":
         return Leaf.deserialise(hash, blob, store);
-      case 'Branch':
+      case "Branch":
         return Branch.deserialise(hash, blob, store);
       /* c8 ignore next 2 */
       default:
-        throw new Error(`unexpected blob to deserialise: ${blob?.__kind}: ${blob}`);
+        throw new Error(
+          `unexpected blob to deserialise: ${blob?.__kind}: ${blob}`
+        );
     }
   }
 }
-
 
 // -----------------------------------------------------------------------------
 // ------------------------------------------------------------------------ Leaf
@@ -502,17 +490,17 @@ export class Leaf extends Trie {
    * @return {Promise<Leaf>}
    */
   static async from(suffix, key, value, store) {
-    key = typeof key === 'string' ? Buffer.from(key) : key;
+    key = typeof key === "string" ? Buffer.from(key) : key;
     assertInstanceOf(Buffer, { key });
 
-    value = typeof value === 'string' ? Buffer.from(value) : value;
+    value = typeof value === "string" ? Buffer.from(value) : value;
     assertInstanceOf(Buffer, { value });
 
-    assertInstanceOf('string', suffix, (what, type) => typeof what === type);
+    assertInstanceOf("string", suffix, (what, type) => typeof what === type);
 
     assert(
-      digest(key).toString('hex').endsWith(suffix),
-      `The suffix ${suffix} isn't a valid extension of ${key.toString('hex')}`,
+      digest(key).toString("hex").endsWith(suffix),
+      `The suffix ${suffix} isn't a valid extension of ${key.toString("hex")}`
     );
 
     const leaf = new Leaf(
@@ -525,7 +513,6 @@ export class Leaf extends Trie {
 
     return leaf.save();
   }
-
 
   /** Set the prefix on a Leaf, and computes its corresponding hash. Both steps
    * are done in lock-step because the node's hash crucially includes its prefix.
@@ -547,22 +534,19 @@ export class Leaf extends Trie {
 
     const head = isOdd
       ? Buffer.concat([Buffer.from([0x00]), nibbles(prefix.slice(0, 1))])
-      : Buffer.from([0xFF]);
+      : Buffer.from([0xff]);
 
-    const tail = Buffer.from(isOdd
-      ? prefix.slice(1)
-      : prefix,
-      'hex'
-    );
+    const tail = Buffer.from(isOdd ? prefix.slice(1) : prefix, "hex");
 
     assert(
       value.length === DIGEST_LENGTH,
-      `value must be a ${DIGEST_LENGTH}-byte digest but it is ${value?.toString('hex')}`
+      `value must be a ${DIGEST_LENGTH}-byte digest but it is ${value?.toString(
+        "hex"
+      )}`
     );
 
     return digest(Buffer.concat([head, tail, value]));
   }
-
 
   /** Store a leaf on disk.
    *
@@ -574,7 +558,6 @@ export class Leaf extends Trie {
     await this.store.put(this.hash, this);
     return super.save(previousHash);
   }
-
 
   /**
    * Insert a new value at the given key and re-compute hashes of all nodes
@@ -592,17 +575,14 @@ export class Leaf extends Trie {
    * @throws {AssertionError} when a value already exists at the given key.
    */
   async insert(key, value) {
-    assert(this.key !== key, 'already in trie');
+    assert(this.key !== key, "already in trie");
     assert(this.prefix.length > 0);
 
     const thisPath = this.prefix;
 
     const newPath = intoPath(key).slice(-thisPath.length);
 
-    assert(
-      thisPath !== newPath,
-      `element already in the trie at ${key}`
-    );
+    assert(thisPath !== newPath, `element already in the trie at ${key}`);
 
     const prefix = commonPrefix([thisPath, newPath]);
 
@@ -613,21 +593,20 @@ export class Leaf extends Trie {
     assert(thisNibble !== newNibble);
 
     return this.into(Branch, prefix, {
-        [thisNibble]: await Leaf.from(
-          thisPath.slice(prefix.length + 1),
-          this.key,
-          this.value,
-          this.store,
-        ),
-        [newNibble]: await Leaf.from(
-          newPath.slice(prefix.length + 1),
-          key,
-          value,
-          this.store,
-        ),
+      [thisNibble]: await Leaf.from(
+        thisPath.slice(prefix.length + 1),
+        this.key,
+        this.value,
+        this.store
+      ),
+      [newNibble]: await Leaf.from(
+        newPath.slice(prefix.length + 1),
+        key,
+        value,
+        this.store
+      ),
     });
   }
-
 
   /**
    * Remove the value at the given key and re-compute hashes of all nodes
@@ -642,11 +621,10 @@ export class Leaf extends Trie {
    * @throws {AssertionError} when a value already exists at the given key.
    */
   async delete(key) {
-    key = typeof key === 'string' ? Buffer.from(key) : key;
+    key = typeof key === "string" ? Buffer.from(key) : key;
     assert(this.key.equals(key), `${key} not in trie`);
     return this.into(Trie);
   }
-
 
   /**
    * A custom function for inspecting a {@link Leaf}, with colors and nice formatting.
@@ -657,27 +635,28 @@ export class Leaf extends Trie {
    */
   [inspect.custom](depth, options, _inspect) {
     const hash = options.stylize(
-      `#${this.hash.toString('hex').slice(0, DIGEST_SUMMARY_LENGTH)}`,
-      'special'
+      `#${this.hash.toString("hex").slice(0, DIGEST_SUMMARY_LENGTH)}`,
+      "special"
     );
 
     const prefix = withEllipsis(this.prefix, PREFIX_CUTOFF, options);
 
-    const key = options.stylize(buffer.isUtf8(this.key)
-      ? this.key.toString()
-      : this.key.toString('hex').slice(0, DIGEST_SUMMARY_LENGTH),
-      'boolean'
+    const key = options.stylize(
+      buffer.isUtf8(this.key)
+        ? this.key.toString()
+        : this.key.toString("hex").slice(0, DIGEST_SUMMARY_LENGTH),
+      "boolean"
     );
 
-    const value = options.stylize(buffer.isUtf8(this.value)
-      ? this.value.toString()
-      : this.value.toString('hex').slice(0, DIGEST_SUMMARY_LENGTH),
-      'string'
+    const value = options.stylize(
+      buffer.isUtf8(this.value)
+        ? this.value.toString()
+        : this.value.toString("hex").slice(0, DIGEST_SUMMARY_LENGTH),
+      "string"
     );
 
     return `${prefix} ${hash} { ${key} → ${value} }`;
   }
-
 
   /** See {@link Trie.walk}
    * @private
@@ -685,7 +664,7 @@ export class Leaf extends Trie {
   async walk(path) {
     assert(
       path.startsWith(this.prefix),
-      `element at remaining path ${path} not in trie: non-matching prefix ${this.prefix}`,
+      `element at remaining path ${path} not in trie: non-matching prefix ${this.prefix}`
     );
 
     return new Proof(
@@ -694,7 +673,6 @@ export class Leaf extends Trie {
     );
   }
 
-
   /** Serialise a Leaf to a format suitable for storage on-disk.
    *
    * @return {object}
@@ -702,13 +680,48 @@ export class Leaf extends Trie {
    */
   serialise() {
     return {
-      __kind: 'Leaf',
+      __kind: "Leaf",
       prefix: this.prefix,
-      key: this.key.toString('hex'),
-      value: this.value.toString('hex'),
+      key: this.key.toString("hex"),
+      value: this.value.toString("hex"),
     };
   }
 
+  async toFullTreeCBOR() {
+    let keyCbor;
+    if (this.key.length > 64) {
+      keyCbor = cbor.sequence(cbor.beginBytes());
+      for (let i = 0; i < this.key.length; i += 64) {
+        keyCbor = cbor.sequence(keyCbor, cbor.bytes(this.key.slice(i, i + 64)));
+      }
+      keyCbor = cbor.sequence(keyCbor, cbor.end());
+    } else {
+      keyCbor = cbor.bytes(this.key);
+    }
+    let valueCbor;
+    if (this.value.length > 64) {
+      valueCbor = cbor.sequence(cbor.beginBytes());
+      for (let i = 0; i < this.value.length; i += 64) {
+        valueCbor = cbor.sequence(
+          valueCbor,
+          cbor.bytes(this.value.slice(i, i + 64))
+        );
+      }
+      valueCbor = cbor.sequence(valueCbor, cbor.end());
+    } else {
+      valueCbor = cbor.bytes(this.value);
+    }
+    return cbor.tag(
+      122,
+      cbor.sequence(
+        cbor.beginList(),
+        cbor.bytes(digest(this.key)),
+        keyCbor,
+        valueCbor,
+        cbor.end()
+      )
+    );
+  }
 
   /** Recover a Leaf from an on-disk serialization format.
    *
@@ -722,13 +735,12 @@ export class Leaf extends Trie {
     return new Leaf(
       hash,
       blob.prefix,
-      Buffer.from(blob.key, 'hex'),
-      Buffer.from(blob.value, 'hex'),
-      store,
+      Buffer.from(blob.key, "hex"),
+      Buffer.from(blob.value, "hex"),
+      store
     );
   }
 }
-
 
 // -----------------------------------------------------------------------------
 // ---------------------------------------------------------------------- Branch
@@ -771,9 +783,7 @@ export class Branch extends Trie {
   static async from(prefix, children, store) {
     assert(children !== undefined);
 
-    children = !Array.isArray(children)
-      ? sparseVector(children)
-      : children;
+    children = !Array.isArray(children) ? sparseVector(children) : children;
 
     // NOTE: We use 'undefined' to represent empty sub-tries mostly because
     //
@@ -797,13 +807,13 @@ export class Branch extends Trie {
     // NOTE: There are special behaviours associated with tries that contains a
     // single node and this is captured as {@link Leaf}.
     assert(
-      children.filter(node => node !== undefined).length > 1,
-      'Branch must have at *at least 2* children. A Branch with a single child is a Leaf.',
+      children.filter((node) => node !== undefined).length > 1,
+      "Branch must have at *at least 2* children. A Branch with a single child is a Leaf."
     );
 
     assert(
       children.length === 16,
-      'children must be a vector of *exactly 16* elements (possibly undefined)',
+      "children must be a vector of *exactly 16* elements (possibly undefined)"
     );
 
     const size = children.reduce((size, child) => size + (child?.size || 0), 0);
@@ -813,7 +823,7 @@ export class Branch extends Trie {
       prefix,
       children,
       size,
-      store,
+      store
     );
 
     return branch.save();
@@ -830,12 +840,13 @@ export class Branch extends Trie {
   static computeHash(prefix, root) {
     assert(
       root.length === DIGEST_LENGTH,
-      `root must be a ${DIGEST_LENGTH}-byte digest but it is ${root?.toString('hex')}`
+      `root must be a ${DIGEST_LENGTH}-byte digest but it is ${root?.toString(
+        "hex"
+      )}`
     );
 
     return digest(Buffer.concat([nibbles(prefix), root]));
   }
-
 
   /**
    * Insert a new value at the given key and re-compute hashes of all nodes
@@ -855,13 +866,12 @@ export class Branch extends Trie {
   async insert(key, value) {
     try {
       return await this.store.batch(() => tryInsert(this, key, value));
-    } catch(e) {
+    } catch (e) {
       // Ensures that children aren't kept in-memory when an insertion failed.
       await this.save();
       throw e;
     }
   }
-
 
   /**
    * Remove the value at the given key and re-compute hashes of all nodes
@@ -877,14 +887,13 @@ export class Branch extends Trie {
    */
   async delete(key) {
     try {
-      return await this.store.batch(() => tryDelete(this, key))
-    } catch(e) {
+      return await this.store.batch(() => tryDelete(this, key));
+    } catch (e) {
       // Ensures that children aren't kept in-memory when an deletion failed.
       await this.save();
       throw e;
     }
   }
-
 
   /**
    * See {@link Trie.walk}
@@ -893,7 +902,7 @@ export class Branch extends Trie {
   async walk(path) {
     assert(
       path.startsWith(this.prefix),
-      `element at remaining path ${path} not in trie: non-matching prefix ${this.prefix}`,
+      `element at remaining path ${path} not in trie: non-matching prefix ${this.prefix}`
     );
 
     const skip = this.prefix.length;
@@ -907,7 +916,7 @@ export class Branch extends Trie {
 
       assert(
         child !== undefined,
-        `element at remaining path ${path} not in trie: no child at branch ${branch}`,
+        `element at remaining path ${path} not in trie: no child at branch ${branch}`
       );
 
       const proof = await child.walk(path.slice(1));
@@ -916,28 +925,27 @@ export class Branch extends Trie {
     });
   }
 
-
   /** A custom function for inspecting a Branch, with colors and nice formatting.
    * @private
    */
   [inspect.custom](depth, options, inspect) {
-    let [head, ...tail] = this.children.filter(node => node !== undefined);
+    let [head, ...tail] = this.children.filter((node) => node !== undefined);
 
     const branches = this.children.reduce((acc, node, branch) => {
       if (node !== undefined) {
-        acc[node.hash] = '0123456789abcdef'[branch];
+        acc[node.hash] = "0123456789abcdef"[branch];
       }
       return acc;
     }, {});
 
     function formatHash(hash, len) {
       return options.stylize(
-        `#${hash.toString('hex').slice(0, len ?? DIGEST_SUMMARY_LENGTH)}`,
-        'special',
+        `#${hash.toString("hex").slice(0, len ?? DIGEST_SUMMARY_LENGTH)}`,
+        "special"
       );
     }
 
-    function format(node, join, vertical = ' ') {
+    function format(node, join, vertical = " ") {
       const nibble = branches[node.hash];
 
       const hash = formatHash(node.hash ?? NULL_HASH);
@@ -954,37 +962,39 @@ export class Branch extends Trie {
             body,
             (s, ix) =>
               (ix === 0
-                  ? ` ${join}─ ${nibble}${node.prefix} ${hash}`
-                  : ` ${vertical} `
-              ) + s
+                ? ` ${join}─ ${nibble}${node.prefix} ${hash}`
+                : ` ${vertical} `) + s
           )}`;
     }
 
     // ----- First
-    let first = format(head, depth === 2 && this.prefix.length === 0 ? '┌' : '├', '│');
+    let first = format(
+      head,
+      depth === 2 && this.prefix.length === 0 ? "┌" : "├",
+      "│"
+    );
     if (depth === 2 && this.prefix.length > 0) {
-      first = `\n ${this.prefix}${first}`
+      first = `\n ${this.prefix}${first}`;
     }
 
     // ----- In-between
     let between = [];
-    tail.slice(0, -1).forEach(node => {
-      between.push(format(node, '├', '│'));
-    })
-    between = between.join('');
+    tail.slice(0, -1).forEach((node) => {
+      between.push(format(node, "├", "│"));
+    });
+    between = between.join("");
 
     // ----- Last
     let last = tail[tail.length - 1];
-    last = format(last, '└');
+    last = format(last, "└");
 
     const rootHash = formatHash(this.hash ?? NULL_HASH, 2 * DIGEST_LENGTH);
-    const wall = ''.padStart(3 + DIGEST_LENGTH * 2, '═')
+    const wall = "".padStart(3 + DIGEST_LENGTH * 2, "═");
 
     return depth == 2
       ? `╔${wall}╗\n║ ${rootHash} ║\n╚${wall}╝${first}${between}${last}`
       : `${first}${between}${last}`;
   }
-
 
   /** Recompute a branch's size and hash after modification; also collapses
    * all children back to hashes.
@@ -996,16 +1006,14 @@ export class Branch extends Trie {
   async save(previousHash) {
     this.hash = Branch.computeHash(this.prefix, merkleRoot(this.children));
 
-    this.children = this.children.map(child => child instanceof Trie
-      ? { hash: child.hash }
-      : child
+    this.children = this.children.map((child) =>
+      child instanceof Trie ? { hash: child.hash } : child
     );
 
     await this.store.put(this.hash, this);
 
     return super.save(previousHash);
   }
-
 
   /** Perform an operation with the node's children, without keeping them
    * around once done.
@@ -1015,13 +1023,16 @@ export class Branch extends Trie {
    * @private
    */
   async withChildren(callback) {
-    return callback(await Promise.all(this.children.map(child =>
-      child === undefined
-        ? child
-        : this.store.get(child.hash, Trie.deserialise)
-    )));
+    return callback(
+      await Promise.all(
+        this.children.map((child) =>
+          child === undefined
+            ? child
+            : this.store.get(child.hash, Trie.deserialise)
+        )
+      )
+    );
   }
-
 
   /** Recursively fetch children and sub-children. Useful to pretty-print (part of)
    * a Branch node
@@ -1033,25 +1044,27 @@ export class Branch extends Trie {
    * @return {Trie} This trie, with children fetched.
    */
   async fetchChildren(depth = 0) {
-    assert(this.children.filter(node => node !== undefined).length > 1);
+    assert(this.children.filter((node) => node !== undefined).length > 1);
 
     async function loop(n, node) {
       if (n < 0 || !(node instanceof Branch)) {
         return node;
       }
 
-      node.children = await Promise.all(node.children.map(async child => {
-        if (child === undefined) {
-          return undefined;
-        }
+      node.children = await Promise.all(
+        node.children.map(async (child) => {
+          if (child === undefined) {
+            return undefined;
+          }
 
-        return loop(
-          n - 1,
-          child instanceof Trie
-            ? child
-            : await node.store.get(child.hash, Trie.deserialise)
-        );
-      }));
+          return loop(
+            n - 1,
+            child instanceof Trie
+              ? child
+              : await node.store.get(child.hash, Trie.deserialise)
+          );
+        })
+      );
 
       return node;
     }
@@ -1059,20 +1072,80 @@ export class Branch extends Trie {
     return loop(depth, this);
   }
 
-
   /** Serialise a Branch to a format suitable for storage on-disk.
    * @return {object}
    * @private
    */
   serialise() {
     return {
-      __kind: 'Branch',
+      __kind: "Branch",
       prefix: this.prefix,
-      children: this.children.map(child => child?.hash.toString('hex')),
+      children: this.children.map((child) => child?.hash.toString("hex")),
       size: this.size,
     };
   }
 
+  async toFullTreeCBOR() {
+    assert(this.children.filter((node) => node !== undefined).length > 1);
+    async function loop(n, node) {
+      if (n < 0 || !(node instanceof Branch)) {
+        return node;
+      }
+
+      node.children = await Promise.all(
+        node.children.map(async (child) => {
+          if (child === undefined) {
+            return undefined;
+          }
+
+          return loop(
+            n - 1,
+            child instanceof Trie
+              ? child
+              : await node.store.get(child.hash, Trie.deserialise)
+          );
+        })
+      );
+
+      return node;
+    }
+    const loadedBranch = await loop(Number.MAX_SAFE_INTEGER, this);
+    async function cborLoop(node) {
+      if (node instanceof Leaf) {
+        return await node.toFullTreeCBOR();
+      } else if (node instanceof Branch) {
+        const cborChildrenArray = await Promise.all(
+          node.children.map(async (child) => await child?.toFullTreeCBOR())
+        );
+        let prefixCbor =
+          node.prefix === ""
+            ? cbor.bytes([])
+            : cbor.bytes(nibbles(node.prefix));
+        let buf = cbor.sequence(cbor.beginList(), prefixCbor);
+        let childrenMap = {};
+        for (let i = 0; i < 16; i++) {
+          if (cborChildrenArray[i] !== undefined) {
+            childrenMap[i] = cborChildrenArray[i];
+          }
+        }
+        buf = cbor.sequence(
+          buf,
+          cbor.map(
+            function (key) {
+              return cbor.int(key);
+            },
+            function (value) {
+              return value;
+            },
+            childrenMap
+          ),
+          cbor.end()
+        );
+        return cbor.tag(121, buf, cbor.end());
+      }
+    }
+    return cborLoop(loadedBranch);
+  }
 
   /** Recover a Branch from an on-disk serialization format.
    *
@@ -1086,19 +1159,18 @@ export class Branch extends Trie {
     return new Branch(
       hash,
       blob.prefix,
-      blob.children.map(child => {
+      blob.children.map((child) => {
         if (!child) {
           return undefined;
         }
 
-        return { hash: Buffer.from(child, 'hex') };
+        return { hash: Buffer.from(child, "hex") };
       }),
       blob.size,
-      store,
+      store
     );
   }
 }
-
 
 // -----------------------------------------------------------------------------
 // ----------------------------------------------------------------------- Proof
@@ -1108,9 +1180,9 @@ export class Branch extends Trie {
  * holds onto a *specific* value and is only valid for a *specific* {@link Trie}.
  */
 export class Proof {
-  static #TYPE_LEAF = Symbol('leaf');
-  static #TYPE_FORK = Symbol('fork');
-  static #TYPE_BRANCH = Symbol('branch');
+  static #TYPE_LEAF = Symbol("leaf");
+  static #TYPE_FORK = Symbol("fork");
+  static #TYPE_BRANCH = Symbol("branch");
 
   /** The path for which this proof is for.
    * @type {Buffer}
@@ -1147,7 +1219,6 @@ export class Proof {
     this.#steps = steps;
   }
 
-
   /**
    * Set or reset the value from the proof; This allows re-using the same proof path
    * in the same trie, but for different values.
@@ -1161,10 +1232,9 @@ export class Proof {
     if (value === undefined) {
       this.#value = undefined;
     } else {
-      this.#value = typeof value === 'string' ? Buffer.from(value) : value;
+      this.#value = typeof value === "string" ? Buffer.from(value) : value;
     }
   }
-
 
   /** Add a step in front of the proof. The proof is built recursively from the
    * bottom-up (from the leaves to the root). At each step in the proof, we
@@ -1178,35 +1248,38 @@ export class Proof {
    * @private
    */
   rewind(target, skip, children) {
-    const me = children.findIndex(x => (x?.hash ?? NULL_HASH).equals(target.hash ?? NULL_HASH));
+    const me = children.findIndex((x) =>
+      (x?.hash ?? NULL_HASH).equals(target.hash ?? NULL_HASH)
+    );
 
     assert(me !== -1, `target not in children`);
 
     const nonEmptyNeighbors = children.filter((x, ix) => {
-      return x !== undefined && !(ix === me)
+      return x !== undefined && !(ix === me);
     });
 
     if (nonEmptyNeighbors.length === 1) {
       const neighbor = nonEmptyNeighbors[0];
 
-      this.#steps.unshift(neighbor instanceof Leaf
-        ? {
-            type: Proof.#TYPE_LEAF,
-            skip,
-            neighbor: {
-              key: intoPath(neighbor.key),
-              value: digest(neighbor.value),
-            },
-          }
-        : {
-            type: Proof.#TYPE_FORK,
-            skip,
-            neighbor: {
-              prefix: nibbles(neighbor.prefix),
-              nibble: children.indexOf(neighbor),
-              root: merkleRoot(neighbor.children),
+      this.#steps.unshift(
+        neighbor instanceof Leaf
+          ? {
+              type: Proof.#TYPE_LEAF,
+              skip,
+              neighbor: {
+                key: intoPath(neighbor.key),
+                value: digest(neighbor.value),
+              },
             }
-          }
+          : {
+              type: Proof.#TYPE_FORK,
+              skip,
+              neighbor: {
+                prefix: nibbles(neighbor.prefix),
+                nibble: children.indexOf(neighbor),
+                root: merkleRoot(neighbor.children),
+              },
+            }
       );
     } else {
       this.#steps.unshift({
@@ -1218,7 +1291,6 @@ export class Proof {
 
     return this;
   }
-
 
   /** Compute the resulting root hash from this proof. This methods has two modes:
    *
@@ -1270,7 +1342,7 @@ export class Proof {
           `no value at path ${this.#path.slice(0, cursor)}`
         );
 
-        return Leaf.computeHash(suffix, digest(this.#value))
+        return Leaf.computeHash(suffix, digest(this.#value));
       }
 
       const isLastStep = this.#steps[ix + 1] === undefined;
@@ -1291,7 +1363,9 @@ export class Proof {
       switch (step.type) {
         case Proof.#TYPE_BRANCH: {
           function h(left, right) {
-            return digest(Buffer.concat([left ?? NULL_HASH, right ?? NULL_HASH]));
+            return digest(
+              Buffer.concat([left ?? NULL_HASH, right ?? NULL_HASH])
+            );
           }
 
           const [lvl1, lvl2, lvl3, lvl4] = step.neighbors;
@@ -1332,12 +1406,13 @@ export class Proof {
             // For skip > 0, we need to reconstruct the original neighbor node
             // before the fork was created. The original node had the full prefix:
             // (common prefix) + (neighbor nibble) + (neighbor's current prefix)
-            const prefix = step.skip === 0
-              ? neighborPrefix
-              : [
-                  nibbles(this.#path.slice(cursor, cursor + step.skip)),
-                  ...neighborPrefix,
-                ];
+            const prefix =
+              step.skip === 0
+                ? neighborPrefix
+                : [
+                    nibbles(this.#path.slice(cursor, cursor + step.skip)),
+                    ...neighborPrefix,
+                  ];
 
             return digest(Buffer.concat([...prefix, step.neighbor.root]));
           }
@@ -1346,15 +1421,14 @@ export class Proof {
 
           return root({
             [thisNibble]: me,
-            [step.neighbor.nibble]: digest(Buffer.concat([
-              step.neighbor.prefix,
-              step.neighbor.root,
-            ]))
+            [step.neighbor.nibble]: digest(
+              Buffer.concat([step.neighbor.prefix, step.neighbor.root])
+            ),
           });
         }
 
         case Proof.#TYPE_LEAF: {
-          const neighborPath = step.neighbor.key.toString('hex');
+          const neighborPath = step.neighbor.key.toString("hex");
 
           assert(neighborPath.slice(0, cursor) === this.#path.slice(0, cursor));
 
@@ -1384,7 +1458,6 @@ export class Proof {
     return loop(0, 0);
   }
 
-
   /** Deserialize a proof from JSON.
    *
    * @param {Buffer|string} path
@@ -1396,45 +1469,48 @@ export class Proof {
    * @return {Proof}
    */
   static fromJSON(key, value, steps) {
-    return new Proof(intoPath(key), value, steps.map(step => {
-      switch (step.type) {
-        case Proof.#TYPE_LEAF.description:
-          return {
-            type: Proof.#TYPE_LEAF,
-            skip: step.skip,
-            neighbor: {
-              key: Buffer.from(step.neighbor.key, 'hex'),
-              value: Buffer.from(step.neighbor.value, 'hex'),
+    return new Proof(
+      intoPath(key),
+      value,
+      steps.map((step) => {
+        switch (step.type) {
+          case Proof.#TYPE_LEAF.description:
+            return {
+              type: Proof.#TYPE_LEAF,
+              skip: step.skip,
+              neighbor: {
+                key: Buffer.from(step.neighbor.key, "hex"),
+                value: Buffer.from(step.neighbor.value, "hex"),
+              },
+            };
+          case Proof.#TYPE_BRANCH.description:
+            const neighbors = [];
+            for (let i = 0; i < step.neighbors.length; i += 2 * DIGEST_LENGTH) {
+              const hash = step.neighbors.slice(i, i + 2 * DIGEST_LENGTH);
+              neighbors.push(Buffer.from(hash, "hex"));
             }
-          };
-        case Proof.#TYPE_BRANCH.description:
-          const neighbors = [];
-          for (let i = 0; i < step.neighbors.length; i += 2 * DIGEST_LENGTH) {
-            const hash = step.neighbors.slice(i, i + 2 * DIGEST_LENGTH);
-            neighbors.push(Buffer.from(hash, 'hex'));
-          }
-          return {
-            type: Proof.#TYPE_BRANCH,
-            skip: step.skip,
-            neighbors,
-          };
-        case Proof.#TYPE_FORK.description:
-          return {
-            type: Proof.#TYPE_FORK,
-            skip: step.skip,
-            neighbor: {
-              prefix: Buffer.from(step.neighbor.prefix, 'hex'),
-              nibble: step.neighbor.nibble,
-              root: Buffer.from(step.neighbor.root, 'hex'),
-            },
-          };
-        /* c8 ignore next 2 */
-        default:
-          throw new Error(`unknown step type ${step.type}`);
-      }
-    }));
+            return {
+              type: Proof.#TYPE_BRANCH,
+              skip: step.skip,
+              neighbors,
+            };
+          case Proof.#TYPE_FORK.description:
+            return {
+              type: Proof.#TYPE_FORK,
+              skip: step.skip,
+              neighbor: {
+                prefix: Buffer.from(step.neighbor.prefix, "hex"),
+                nibble: step.neighbor.nibble,
+                root: Buffer.from(step.neighbor.root, "hex"),
+              },
+            };
+          /* c8 ignore next 2 */
+          default:
+            throw new Error(`unknown step type ${step.type}`);
+        }
+      })
+    );
   }
-
 
   /** Serialise the proof as a portable JSON.
    *
@@ -1446,7 +1522,9 @@ export class Proof {
         return {
           ...step,
           type: step.type.description,
-          neighbors: step.neighbors.map(x => x?.toString('hex') ?? '').join(''),
+          neighbors: step.neighbors
+            .map((x) => x?.toString("hex") ?? "")
+            .join(""),
         };
       },
 
@@ -1456,9 +1534,9 @@ export class Proof {
           type: step.type.description,
           neighbor: {
             ...step.neighbor,
-            prefix: step.neighbor.prefix.toString('hex'),
-            root: step.neighbor.root.toString('hex'),
-          }
+            prefix: step.neighbor.prefix.toString("hex"),
+            root: step.neighbor.root.toString("hex"),
+          },
         };
       },
 
@@ -1467,44 +1545,43 @@ export class Proof {
           ...step,
           type: step.type.description,
           neighbor: {
-            key: step.neighbor.key.toString('hex'),
-            value: step.neighbor.value.toString('hex'),
-          }
+            key: step.neighbor.key.toString("hex"),
+            value: step.neighbor.value.toString("hex"),
+          },
         };
       },
     };
 
-    return this.#steps.map(step => serialisers[step.type](step));
+    return this.#steps.map((step) => serialisers[step.type](step));
   }
 
   toUPLC() {
-    const steps = this.toJSON().map(step => {
-        switch (step.type) {
-          case Proof.#TYPE_BRANCH.description: {
-            const skip = `I ${step.skip}`;
-            const neighbors = `B #${step.neighbors}`;
-            return `Constr 0 [${skip}, ${neighbors}]`;
-          }
-          case Proof.#TYPE_FORK.description: {
-            const skip = `I ${step.skip}`;
-            const nibble = `I ${step.neighbor.nibble}`;
-            const prefix = `B #${step.neighbor.prefix}`;
-            const root = `B #${step.neighbor.root}`;
-            const neighbors = `Constr 0 [${nibble}, ${prefix}, ${root}]`;
-            return `Constr 1 [${skip}, ${neighbors}]`;
-          }
-          case Proof.#TYPE_LEAF.description: {
-            const skip = `I ${step.skip}`;
-            const key = `B #${step.neighbor.key}`;
-            const value = `B #${step.neighbor.value}`;
-            return `Constr 2 [${skip}, ${key}, ${value}]`;
-          }
+    const steps = this.toJSON().map((step) => {
+      switch (step.type) {
+        case Proof.#TYPE_BRANCH.description: {
+          const skip = `I ${step.skip}`;
+          const neighbors = `B #${step.neighbors}`;
+          return `Constr 0 [${skip}, ${neighbors}]`;
         }
+        case Proof.#TYPE_FORK.description: {
+          const skip = `I ${step.skip}`;
+          const nibble = `I ${step.neighbor.nibble}`;
+          const prefix = `B #${step.neighbor.prefix}`;
+          const root = `B #${step.neighbor.root}`;
+          const neighbors = `Constr 0 [${nibble}, ${prefix}, ${root}]`;
+          return `Constr 1 [${skip}, ${neighbors}]`;
+        }
+        case Proof.#TYPE_LEAF.description: {
+          const skip = `I ${step.skip}`;
+          const key = `B #${step.neighbor.key}`;
+          const value = `B #${step.neighbor.value}`;
+          return `Constr 2 [${skip}, ${key}, ${value}]`;
+        }
+      }
     });
 
     return `(con data (List [${steps.join(", ")}]))`;
   }
-
 
   /** Serialise the proof as a portable CBOR, ready to be decoded on-chain.
    *
@@ -1513,70 +1590,81 @@ export class Proof {
   toCBOR() {
     return cbor.sequence(
       cbor.beginList(),
-      ...this.toJSON().map(step => {
+      ...this.toJSON().map((step) => {
         switch (step.type) {
           case Proof.#TYPE_BRANCH.description: {
-            return cbor.tag(121, cbor.sequence(
-              cbor.beginList(),
-              cbor.int(step.skip),
+            return cbor.tag(
+              121,
               cbor.sequence(
-                cbor.beginBytes(),
-                cbor.bytes(Buffer.from(step.neighbors.slice(0, 128), 'hex')),
-                cbor.bytes(Buffer.from(step.neighbors.slice(128), 'hex')),
-                cbor.end(),
-              ),
-              cbor.end(),
-            ));
+                cbor.beginList(),
+                cbor.int(step.skip),
+                cbor.sequence(
+                  cbor.beginBytes(),
+                  cbor.bytes(Buffer.from(step.neighbors.slice(0, 128), "hex")),
+                  cbor.bytes(Buffer.from(step.neighbors.slice(128), "hex")),
+                  cbor.end()
+                ),
+                cbor.end()
+              )
+            );
           }
           case Proof.#TYPE_FORK.description: {
-            return cbor.tag(122, cbor.sequence(
-              cbor.beginList(),
-              cbor.int(step.skip),
-              cbor.tag(121, cbor.sequence(
+            return cbor.tag(
+              122,
+              cbor.sequence(
                 cbor.beginList(),
-                cbor.int(step.neighbor.nibble),
-                cbor.bytes(Buffer.from(step.neighbor.prefix, 'hex')),
-                cbor.bytes(Buffer.from(step.neighbor.root, 'hex')),
-                cbor.end(),
-              )),
-              cbor.end(),
-            ));
+                cbor.int(step.skip),
+                cbor.tag(
+                  121,
+                  cbor.sequence(
+                    cbor.beginList(),
+                    cbor.int(step.neighbor.nibble),
+                    cbor.bytes(Buffer.from(step.neighbor.prefix, "hex")),
+                    cbor.bytes(Buffer.from(step.neighbor.root, "hex")),
+                    cbor.end()
+                  )
+                ),
+                cbor.end()
+              )
+            );
           }
           case Proof.#TYPE_LEAF.description: {
-            return cbor.tag(123, cbor.sequence(
-              cbor.beginList(),
-              cbor.int(step.skip),
-              cbor.bytes(Buffer.from(step.neighbor.key, 'hex')),
-              cbor.bytes(Buffer.from(step.neighbor.value, 'hex')),
-              cbor.end(),
-            ));
+            return cbor.tag(
+              123,
+              cbor.sequence(
+                cbor.beginList(),
+                cbor.int(step.skip),
+                cbor.bytes(Buffer.from(step.neighbor.key, "hex")),
+                cbor.bytes(Buffer.from(step.neighbor.value, "hex")),
+                cbor.end()
+              )
+            );
           }
           /* c8 ignore next 2 */
           default:
             throw new Error(`unknown step type ${step.type}`);
         }
       }),
-      cbor.end(),
+      cbor.end()
     );
   }
-
 
   /** Serialise the proof as Aiken code. Mainly for debugging / testing.
    *
    * @return {string}
    */
   toAiken() {
-    const steps = this.toJSON().map(step => {
+    const steps = this.toJSON().map((step) => {
       switch (step.type) {
         case Proof.#TYPE_BRANCH.description: {
-          return `  Branch { skip: ${step.skip}, neighbors: #"${step.neighbors}" },\n`
+          return `  Branch { skip: ${step.skip}, neighbors: #"${step.neighbors}" },\n`;
         }
         case Proof.#TYPE_FORK.description: {
           const neighbor = `Neighbor { nibble: ${step.neighbor.nibble}, prefix: #"${step.neighbor.prefix}", root: #"${step.neighbor.root}" }`;
-          return `  Fork { skip: ${step.skip}, neighbor: ${neighbor} },\n`
+          return `  Fork { skip: ${step.skip}, neighbor: ${neighbor} },\n`;
         }
         case Proof.#TYPE_LEAF.description: {
-          return `  Leaf { skip: ${step.skip}, key: #"${step.neighbor.key}", value: #"${step.neighbor.value}" },\n`
+          return `  Leaf { skip: ${step.skip}, key: #"${step.neighbor.key}", value: #"${step.neighbor.value}" },\n`;
         }
         /* c8 ignore next 2 */
         default:
@@ -1584,7 +1672,7 @@ export class Proof {
       }
     });
 
-    return `[\n${steps.join('')}]`;
+    return `[\n${steps.join("")}]`;
   }
 }
 
@@ -1612,9 +1700,8 @@ export class Proof {
  */
 async function tryInsert(self, key, value) {
   const loop = async (node, path, parents) => {
-    const prefix = node.prefix.length > 0
-      ? commonPrefix([node.prefix, path])
-      : '';
+    const prefix =
+      node.prefix.length > 0 ? commonPrefix([node.prefix, path]) : "";
 
     path = path.slice(prefix.length);
 
@@ -1629,16 +1716,11 @@ async function tryInsert(self, key, value) {
       assert(thisNibble !== newNibble);
 
       await node.into(Branch, prefix, {
-        [thisNibble]: await Leaf.from(
-          path.slice(1),
-          key,
-          value,
-          self.store,
-        ),
+        [thisNibble]: await Leaf.from(path.slice(1), key, value, self.store),
         [newNibble]: await Branch.from(
           node.prefix.slice(prefix.length + 1),
           node.children,
-          self.store,
+          self.store
         ),
       });
 
@@ -1698,10 +1780,10 @@ async function tryInsert(self, key, value) {
  * @throws {AssertionError} when a value doesn't exists at the given key.
  */
 async function tryDelete(self, key) {
-  key = typeof key === 'string' ? Buffer.from(key) : key;
+  key = typeof key === "string" ? Buffer.from(key) : key;
 
   function nonEmptyChildren(node) {
-    return node.children.flatMap((n, ix) => n === undefined ? [] : [[n, ix]]);
+    return node.children.flatMap((n, ix) => (n === undefined ? [] : [[n, ix]]));
   }
 
   const loop = async (node, path) => {
@@ -1742,7 +1824,7 @@ async function tryDelete(self, key) {
         node.prefix,
         neighborNibble.toString(16),
         neighbor.prefix,
-      ].join('');
+      ].join("");
 
       await self.store.del(neighbor.hash);
 
