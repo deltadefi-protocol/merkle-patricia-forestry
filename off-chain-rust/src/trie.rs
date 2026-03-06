@@ -234,6 +234,14 @@ impl Trie {
     fn walk(&self, _path: &str) -> Result<Proof> {
         Err(TrieError::CannotWalkEmptyTrie(_path.to_string()))
     }
+
+    /// Convert to full tree CBOR representation
+    /// Throws error for empty trie (matching JavaScript behavior)
+    pub fn to_full_tree_cbor(&self) -> Result<Vec<u8>> {
+        Err(TrieError::InvalidOperation(
+            "cannot serialise empty trie".to_string(),
+        ))
+    }
 }
 
 /// A Leaf node in the trie
@@ -449,6 +457,46 @@ impl Leaf {
         };
 
         Ok(Proof::new(into_path(&self.key), value, vec![]))
+    }
+
+    /// Convert to full tree CBOR representation
+    /// Serializes a Leaf node to CBOR format (tag 122)
+    pub fn to_full_tree_cbor(&self) -> Vec<u8> {
+        // Encode key - chunk if > 64 bytes
+        let key_cbor = if self.key.len() > 64 {
+            let mut parts = vec![cbor::begin_bytes()];
+            for chunk in self.key.chunks(64) {
+                parts.push(cbor::bytes(chunk));
+            }
+            parts.push(cbor::end());
+            cbor::sequence(&parts)
+        } else {
+            cbor::bytes(&self.key)
+        };
+
+        // Encode value - chunk if > 64 bytes
+        let value_cbor = if self.value.len() > 64 {
+            let mut parts = vec![cbor::begin_bytes()];
+            for chunk in self.value.chunks(64) {
+                parts.push(cbor::bytes(chunk));
+            }
+            parts.push(cbor::end());
+            cbor::sequence(&parts)
+        } else {
+            cbor::bytes(&self.value)
+        };
+
+        // Return tag 122 with [digest(key), key, value]
+        cbor::tag(
+            122,
+            &cbor::sequence(&[
+                cbor::begin_list(),
+                cbor::bytes(&digest(&self.key)),
+                key_cbor,
+                value_cbor,
+                cbor::end(),
+            ]),
+        )
     }
 }
 
@@ -788,6 +836,98 @@ impl Branch {
 
         Ok(())
     }
+
+    /// Convert to full tree CBOR representation
+    /// Recursively serializes the entire tree rooted at this branch (tag 121)
+    pub fn to_full_tree_cbor(&self) -> Result<Vec<u8>> {
+        // Phase 1: Load the entire tree recursively
+        let loaded_branch = self.load_full_tree()?;
+
+        // Phase 2: Convert to CBOR
+        loaded_branch.cbor_loop()
+    }
+
+    /// Recursively load all children from storage
+    fn load_full_tree(&self) -> Result<Branch> {
+        let mut loaded_children = Vec::new();
+
+        for child_opt in &self.children {
+            if let Some(child) = child_opt {
+                let loaded_child = match child {
+                    TrieNode::Leaf(leaf) => TrieNode::Leaf(leaf.clone()),
+                    TrieNode::Branch(branch) => {
+                        // Recursively load this branch's children
+                        TrieNode::Branch(branch.load_full_tree()?)
+                    }
+                    TrieNode::Empty(trie) => TrieNode::Empty(trie.clone()),
+                };
+                loaded_children.push(Some(loaded_child));
+            } else {
+                loaded_children.push(None);
+            }
+        }
+
+        Ok(Branch {
+            hash: self.hash,
+            prefix: self.prefix.clone(),
+            children: loaded_children,
+            size: self.size,
+            store: self.store.clone(),
+            is_root: self.is_root,
+        })
+    }
+
+    /// Convert loaded tree to CBOR representation
+    fn cbor_loop(&self) -> Result<Vec<u8>> {
+        // Recursively serialize all children
+        let mut cbor_children_vec = Vec::new();
+        for child_opt in &self.children {
+            if let Some(child) = child_opt {
+                let cbor = match child {
+                    TrieNode::Leaf(leaf) => leaf.to_full_tree_cbor(),
+                    TrieNode::Branch(branch) => branch.cbor_loop()?,
+                    TrieNode::Empty(_) => {
+                        return Err(TrieError::InvalidOperation(
+                            "cannot serialise empty trie in branch".to_string(),
+                        ))
+                    }
+                };
+                cbor_children_vec.push(Some(cbor));
+            } else {
+                cbor_children_vec.push(None);
+            }
+        }
+
+        // Encode prefix
+        let prefix_cbor = if self.prefix.is_empty() {
+            cbor::bytes(&[])
+        } else {
+            cbor::bytes(&nibbles(&self.prefix))
+        };
+
+        // Build children map (only non-None children)
+        let mut children_map = Vec::new();
+        for (i, cbor_opt) in cbor_children_vec.iter().enumerate() {
+            if let Some(cbor) = cbor_opt {
+                children_map.push((i, cbor.clone()));
+            }
+        }
+
+        // Build the CBOR structure
+        let result = cbor::sequence(&[
+            cbor::begin_list(),
+            prefix_cbor,
+            cbor::map(
+                |&idx| cbor::int(idx as i64),
+                |val| val.clone(),
+                &children_map,
+            ),
+            cbor::end(),
+        ]);
+
+        // Return tag 121 wrapping the list
+        Ok(cbor::tag(121, &result))
+    }
 }
 
 /// Enum representing any trie node type
@@ -926,6 +1066,16 @@ impl TrieNode {
     pub fn insert(&mut self, key: &[u8], value: &[u8]) -> Result<()> {
         let path = into_path(key);
         self.insert_with_path(key, value, &path)
+    }
+
+    /// Convert to full tree CBOR representation
+    /// Delegates to the appropriate implementation based on node type
+    pub fn to_full_tree_cbor(&self) -> Result<Vec<u8>> {
+        match self {
+            TrieNode::Empty(t) => t.to_full_tree_cbor(),
+            TrieNode::Leaf(l) => Ok(l.to_full_tree_cbor()),
+            TrieNode::Branch(b) => b.to_full_tree_cbor(),
+        }
     }
 
     fn insert_with_path(&mut self, key: &[u8], value: &[u8], path: &str) -> Result<()> {
